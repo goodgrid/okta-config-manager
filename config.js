@@ -7,25 +7,25 @@ const config = {
     db: {
         host: "cluster0.gmo8udc.mongodb.net",
         username: "okta-config-manager",
-        password: "OWdRnw1sh9F1xYe3"
+        password: secrets.mongo.password
     },
     instances: {
         
         cg: {
             baseUrl: "https://cloudguide.okta.com/api/v1",
-            token: secrets.cgToken
+            token: secrets.okta.cgToken
         },
         dev1: {
             baseUrl: "https://dev-4478738.okta.com/api/v1",
-            token: secrets.dev1Token
+            token: secrets.okta.dev1Token
         },
         dev2: {
             baseUrl: "https://dev-05729419.okta.com/api/v1",
-            token: secrets.dev2Token
+            token: secrets.okta.dev2Token
         },
         mazarsprod: {
             baseUrl: "https://mazarsnl.okta-emea.com/api/v1",
-            token: secrets.mazarsprdToken
+            token: secrets.okta.mazarsprdToken
         }
     }
 }
