@@ -1,22 +1,35 @@
 
 const objectTypes = [
     { 
-        name: "oktaGroups",
+        name: "userSchema",
         parents: [],
         extract: true,
-        upsert: false,
+        upsert: true,
+        exclude: [],
+        replaceProps: [],
+        deletableProps: [],
+        endpoint: "meta/schemas/user/default",
+        queryString: ``,
+        comparisonProp: "name",
+    },
+/*
+    { 
+        name: "oktaGroup",
+        parents: [],
+        extract: true,
+        upsert: true,
         exclude: ["Everyone", "Okta Administrators"],
         replaceProps: [],
         deletableProps: [],
         endpoint: "groups",
-        queryString: '', //`filter=type eq "OKTA_GROUP"`,
+        queryString: `filter=type eq "OKTA_GROUP" or type eq "BUILT_IN"`,
         comparisonProp: "profile.name",
     },
     {
-        name: "zones",
+        name: "zone",
         parents: [],
         extract: true,
-        upsert: false,
+        upsert: true,
         exclude: [],
         replaceProps: [],
         deletableProps: [],
@@ -26,19 +39,59 @@ const objectTypes = [
     },
 
     {
-        name: "groupRules",
+        name: "groupRule",
         parents: [],
-        extract: false,
-        upsert: false,
+        extract: true,
+        upsert: true,
         exclude: [],
         deletableProps: [],
         endpoint: "groups/rules",
         queryString: ``,
         comparisonProp: "name",
+        exclude: [],
+        deletableProps: [
+            "conditions.people.users.exclude",
+            "conditions.people.groups.exclude",
+        ],
+        replaceProps: [
+            {
+                path: "actions.assignUserToGroups.groupIds",
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
+            }
+        ],
+        postCreateActions: [ //TODO: Implement this
+            {
+                method: "POST",
+                endpoint: "groups/rules/{id}/lifecycle/activate",
+                body: {}
+            }
+        ]
 
     },
     {
-        name: "authenticationPolicies",
+        name: "globalSignOnPolicy",
+        parents: [],
+        extract: true,
+        upsert: true,
+        endpoint: "policies",
+        queryString: "type=OKTA_SIGN_ON", 
+        comparisonProp: "name",
+        exclude: [],
+        deletableProps: [],
+        replaceProps: [
+            {
+                path: "conditions.people.groups.include",
+                //type: "array",
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
+            }
+        ]
+    },
+    {
+        //    This object is only present in Okta Identity Engine. Disable it for use with 
+        //    Okta Classic instances.
+        name: "accessPolicy", 
         parents: [],
         extract: false,
         upsert: false,
@@ -47,10 +100,19 @@ const objectTypes = [
         comparisonProp: "name",
         exclude: [],
         deletableProps: [],
+        replaceProps: [
+            {
+                path: "conditions.people.groups.include",
+                //type: "array",
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
+            }
+        ]
+
 
     },
     {    
-        name: "passwordPolicies",
+        name: "passwordPolicy",
         parents: [],
         extract: true,
         upsert: true,
@@ -63,15 +125,15 @@ const objectTypes = [
             {
                 path: "conditions.people.groups.include",
                 //type: "array",
-                object: "oktaGroups",
-                //comparisonProp: "id"
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
             }
         ]
 
     },
     {
-        name: "policyRules",
-        parents: ["passwordPolicies"],
+        name: "policyRule",
+        parents: ["passwordPolicy", "globalSignOnPolicy", "accessPolicy"],
         extract: true,
         upsert: true,
         endpoint: "policies/{id}/rules",
@@ -82,159 +144,14 @@ const objectTypes = [
         replaceProps: [            {
             path: "conditions.network.include",
             //type: "string",
-            object: "zones",
-            //comparisonProp: "id"
+            object: "zone",
+            comparisonProp: "name"
         }
 ]
 
     }
-
+*/
 ]
 
-
-// Upserting the objects is in the order of definition
-/*
-const definitions = {
-    {
-        nane: "apps",
-        parents: [],
-        extract: false,
-        upsert: false,
-        exclude: ["saasure", "okta_enduser", "okta_browser_plugin", "flow", "okta_flow_sso", "hellosign_hellofax", "bookmark", "scim1testapp", "scim2testapp", "oidc_client", "scim2headerauth", "scaleft", "office365", "slack", "asana", "dropbox_for_business", "zoom"],
-        deletableProps: ["keys", "credentials.signing.kid"],
-        endpoint: "apps",
-        queryString: `filter=status eq "ACTIVE"`,
-        comparisonProp: "name",
-    },
-    {
-        name: "idps",
-        parents: [],
-        extract: false,
-        upsert: false,
-        endpoint: "idps",
-        queryString: "",
-        comparisonProp: "name",
-        exclude: []
-        //TODO: IdP Routing rules
-    },
-    {
-        name: "authenticators",
-        parents: [],
-        extract: false,
-        upsert: false,
-    },
-
-    "oktaGroups": {
-        name: "oktaGroups",
-        function: "generic",
-        extract: false,
-        upsert: true,
-        exclude: [],
-        deletableProps: [],
-        endpoint: "groups",
-        queryString: `filter=type eq "OKTA_GROUP"`,
-        comparisonProp: "profile.name",
-    },
-    "groupRules": {
-        function: "generic",
-        extract: false,
-        upsert: false,
-        exclude: [],
-        deletableProps: [],
-        endpoint: "groups/rules",
-        queryString: ``,
-        comparisonProp: "name",
-
-    },
-    "apps": {
-        function: "generic",
-        extract: false,
-        upsert: false,
-        exclude: ["saasure", "okta_enduser", "okta_browser_plugin", "flow", "okta_flow_sso", "hellosign_hellofax", "bookmark", "scim1testapp", "scim2testapp", "oidc_client", "scim2headerauth", "scaleft", "office365", "slack", "asana", "dropbox_for_business", "zoom"],
-        deletableProps: ["keys", "credentials.signing.kid"],
-        endpoint: "apps",
-        queryString: `filter=status eq "ACTIVE"`,
-        comparisonProp: "name",
-    },
-    "zones": {
-        function: "generic",
-        extract: false,
-        upsert: false,
-        exclude: [],
-        deletableProps: [],
-        endpoint: "zones",
-        queryString: ``,
-        comparisonProp: "name",
-    },
-    "idps": {
-        function: "generic",
-        extract: false,
-        upsert: false,
-        endpoint: "idps",
-        queryString: "",
-        comparisonProp: "name",
-        exclude: []
-        //TODO: IdP Routing rules
-    },
-
-    "authenticators": {
-        
-        extract: false,
-        upsert: false,
-    },
-    "authenticationPolicies": {
-        function: "generic",
-        extract: false,
-        upsert: false,
-        endpoint: "policies",
-        queryString: "type=ACCESS_POLICY",
-        comparisonProp: "name",
-        exclude: [],
-        deletableProps: [],
-
-    },
-    "passwordPolicies": {
-        function: "generic",
-        extract: true,
-        upsert: false,
-        endpoint: "policies",
-        queryString: "type=PASSWORD",
-        comparisonProp: "name",
-        exclude: [],
-        deletableProps: [],
-        replaceValues: [
-            {
-                path: "conditions.people.groups.include",
-                type: "array",
-                object: "oktaGroups",
-                comparisonProp: "id"
-            }
-        ]
-
-    },
-    "globalSignOnPolicies": {
-        extract: false,
-        upsert: false
-    },
-    "enrollmentPolicies": {
-        extract: false,
-        upsert: false
-    },
-    // TODO "authorizationPolicies",
-    "idpDiscoveryPolicies": {
-        extract: false,
-        upsert: false
-    },
-    "brands": {
-        extract: false,
-        upsert: false
-
-    },
-    "schemas": {
-        // The Okta Schemas API provides operations to manage custom User profiles
-    },
-    "trustedOrigings": {}
-}
-*/
 
 export default objectTypes

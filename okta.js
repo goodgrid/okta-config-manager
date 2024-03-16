@@ -1,6 +1,6 @@
 import axios from "axios"
 import Bottleneck from "bottleneck";
-import { feedback } from "./utils.js";
+import logger from "./logger.js";
 import config from "./config.js";
 
 
@@ -13,15 +13,15 @@ const limiter = new Bottleneck({
 oktaApi.interceptors.request.use(async reqConfig => {
     try {
         await limiter.schedule(() => {
-            feedback.debug(`Throttling ${reqConfig.method} request to ${reqConfig.url}`)
+            logger.debug(`Throttling ${reqConfig.method.toUpperCase()} request to ${reqConfig.url}`)
         });
-        feedback.debug(reqConfig.request)
+        //logger.debug(JSON.stringify(reqConfig.data, null, 4))
         return reqConfig
     } catch (error) {
-        feedback.error("Error while throttling")
+        logger.error("Error while throttling")
     }
 }, error => {
-    feedback.error("Error while thottling")
+    logger.error("Error while thottling")
 })
 
 
@@ -32,14 +32,14 @@ oktaApi.interceptors.response.use(async response => {
     const next = nextPage(response.headers.link)
 
     if (next !== undefined) {
-        feedback.debug(`next request needed`, response.request.path, next)
+        logger.debug(`next request needed`, response.request.path, next)
 
         try {
             
             const nextResponse = await oktaPublic.get(next)
             totalData = totalData.concat(nextResponse.data)
         } catch(err) {
-            feedback.error(error)
+            logger.error(error)
         }
     }
 

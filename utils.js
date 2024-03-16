@@ -1,9 +1,8 @@
-
+import logger from './logger.js'
 import config from './config.js'
 
-
 export const isCommandLineValid = (action, target, filename) => {
-    feedback.log("IMPLEMENT THIS")
+    logger.info("IMPLEMENT THIS")
     return true
 }
 
@@ -17,20 +16,16 @@ export const keypress = async () => {
   }
 
   export const getSourceObjects = async (db, instance, type, parentId) => {
-    feedback.debug(`Getting '${type}' objects for parent ${parentId} from source ${instance}`)
-    const sessions = await db.objects.distinct("session", { "type": type, "instance": instance})
+    logger.debug(`Getting '${type}' objects for parent ${parentId?parentId:"(none)"} from source ${instance}`)
+    const sessions = await db.objects.distinct("session", { "type": type, "instance": instance}, {ignoreExclusion: true})
     const mostRecentSession = sessions.sort().reverse()[0]
 
-    const results = await db.objects.find({
+    return await db.objects.find({
         session: mostRecentSession,
         instance: instance,
         parentId: parentId,
         type: type
     })
-
-    return await Promise.all(results.map(result => {
-        return result.object
-    }))
 }
 
 export const feedback = {

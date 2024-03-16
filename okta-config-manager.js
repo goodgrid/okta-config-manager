@@ -1,18 +1,21 @@
 import _ from 'lodash'
 import db from './mongo.js';
+import logger from './logger.js';
 import { oktaApi } from "./okta.js"
 import objectTypes from './types.js';
 import { isCommandLineValid, keypress, getSourceObjects, feedback } from './utils.js';
 import config from "./config.js"
 
 export const get = async (db, session, source, objectDef, parentId) => {
-    feedback.log(`Getting and storing objects of type ${objectDef.name}`)
+    logger.info(`Getting and storing objects of type ${objectDef.name} from source ${source} for parent ${parentId?parentId:"(none)"}`)
     const childObjectDefinitions = objectTypes.filter(definition => definition.parents.indexOf(objectDef.name) > -1)
 
     const instanceObjects = await getInstanceObjects(objectDef, source, parentId)
 
+    console.log(instanceObjects)
+
     const resultObjects = (await Promise.all(instanceObjects.map(async resultObject => {
-        feedback.debug(`${session} - Saving ${objectDef.name} ${resultObject.profile ? resultObject.profile.name : resultObject.name}`)
+        logger.debug(`${session} - Saving ${objectDef.name} ${resultObject.profile ? resultObject.profile.name : resultObject.name} to database`)
 
         // For every object of the current type, get child objects, if any
         for (const childObjectDef of childObjectDefinitions) {
@@ -24,7 +27,7 @@ export const get = async (db, session, source, objectDef, parentId) => {
             type: objectDef.name,
             instance: source,
             parentId: parentId,
-            object: resultObject,
+            config: resultObject,
         }
         await db.objects.insertOne(result)
         return  result       
@@ -35,29 +38,38 @@ export const get = async (db, session, source, objectDef, parentId) => {
 
 
 export const set = async (db, session, source, target, objectDef, objects, parentId) => {
-    feedback.log(`Upserting ${objects.length} into target '${target}' objects of type '${objectDef.name} from source '${source}'`)
+    logger.info(`Upserting ${objects.length} objects of type '${objectDef.name} into target '${target}' from source '${source}'`)
 
+    /*
+        Identifying optional child objects and their definitions for processing after this (then parent) objects
+        is processed.
+    */
     const childObjectDefinitions = objectTypes.filter(definition => definition.parents.indexOf(objectDef.name) > -1)
 
     /*
-        Getting objects from target instance to easy queryind and to avoid too many requests to
+        Getting objects from target instance to easy querying and to avoid too many requests to
         Okta. The objects are saved to the database for recording of a usable snapshot, but also
         kept in memory
     */
     const targetObjects = await get(db, session, target, objectDef, parentId)
 
-    for (const object of objects) {            
+
+    /*
+        Looping over the originally passed set of objects.
+    */
+    for (const object of objects) {     
+
         /*
             Skip config objects whose name are configured as excluded in the object 
             definition
         */
-        if (objectDef.exclude.indexOf(object.name) == -1) {
+        if (objectDef.exclude.indexOf(object.config.name) == -1) {
             /*
                 The source object is turned into a target object by switching references to
                 groups, zones, etc to the id's of the target instance.
 
             */
-            await prepareObject(db, object, objectDef, source, target)
+            await prepareObject(db, object.config, objectDef, source, target)
 
             /*
                 Check if the object that is about to be upserted already exists. This decides
@@ -75,34 +87,46 @@ export const set = async (db, session, source, target, objectDef, objects, paren
                 neccessary to be able to swith references (id's)
             */
             const existingTargetObject = targetObjects.find(targetObject => {
-                return _.get(targetObject.object, objectDef.comparisonProp) == _.get(object, objectDef.comparisonProp)
+                return _.get(targetObject.config, objectDef.comparisonProp) == _.get(object.config, objectDef.comparisonProp)
             })
 
             let touchedTargetObject
             if (existingTargetObject) {
-                touchedTargetObject = await updateInstanceObject(object, objectDef, target, existingTargetObject.object.id)
+                touchedTargetObject = await updateInstanceObject(object.config, objectDef, target, existingTargetObject.config.id)
+
             } else {
-                touchedTargetObject = await createInstanceObject(object, objectDef, target)
+                touchedTargetObject = await createInstanceObject(object.config, objectDef, target, parentId)
+
+                if (!(touchedTargetObject instanceof Error)) {
+                    logger.info("New object succesfully created")
+                }
+                
             }
 
-            if (touchedTargetObject) {
+            if (!(touchedTargetObject instanceof Error)) {
+                logger.info(`Target object succesfully ${existingTargetObject?"UPDATED":"CREATED"}`)
+
                 await db.objects.insertOne({
                     session: session,
                     type: objectDef.name,
                     instance: target,
-                    object: touchedTargetObject
+                    config: touchedTargetObject
                 })
 
                 // For every object of the current type, set child objects, if any
                 for (const childObjectDef of childObjectDefinitions) {
-                    const childSourceObjects = await getSourceObjects(db, source, childObjectDef.name, touchedTargetObject.id)
+                    logger.info(`Now starting to process child objects of type ${childObjectDef.name} for parent ${object.config.id}`)
+
+                    const childSourceObjects = await getSourceObjects(db, source, childObjectDef.name, object.config.id)
+
                     await set(db, session, source, target, childObjectDef, childSourceObjects, touchedTargetObject.id)
                 }
+
             } else {
-                feedback.error("The object could not be updated or created in the target. It was not stored in the database and child processing is skipped. ")
+                logger.error("The object could not be updated or created in the target. It was not stored in the database and child processing is skipped. ")
             }            
         } else {
-            feedback.debug(`Skipping ${object.name}`)
+            logger.debug(`Skipping ${object.name}`)
         }  
     }
         
@@ -117,7 +141,7 @@ const prepareObject = async (db, object, objectDef, source, target) => {
         that need removal before importing into the target instance.
     */
     for (const deletableProp of objectDef.deletableProps) {
-        feedback.debug(`Removing property ${deletableProp} from config object`)
+        logger.debug(`Removing property ${deletableProp} from config object`)
         _.unset(object, deletableProp)
     }
 
@@ -148,12 +172,14 @@ const prepareObject = async (db, object, objectDef, source, target) => {
             // It's an array of values and we're looping over each one of them
             const newPropertyValue = await Promise.all(currentPropertyValue.map(async currentPropertyValueElement => {
                 
-                feedback.debug(`(array) I would now lookup object with the id '${currentPropertyValueElement}' of type ${replaceProp.object} for the target instance`)
+                logger.debug(`(array) I would now lookup object with the id '${currentPropertyValueElement}' of type ${replaceProp.object} for the target instance`)
 
                 const sourceObject = await db.objects.findOne({
                     "type": replaceProp.object,
                     "instance": source,
-                    "object.id": currentPropertyValueElement
+                    "config.id": currentPropertyValueElement
+                }, {
+                    ignoreExclusion: true
                 })
 
                 //TODO I have to make sure the below query finds a recent object, since the database
@@ -161,21 +187,20 @@ const prepareObject = async (db, object, objectDef, source, target) => {
                 const targetObject = await db.objects.findOne({
                     "type": replaceProp.object,
                     "instance": target,
-                    "object.profile.name": sourceObject.object.profile.name
+                    [`config.${replaceProp.comparisonProp}`]: _.get(sourceObject, `config.${replaceProp.comparisonProp}`) //sourceObject.config.profile.name]
+                },{
+                    ignoreExclusion: true
                 })
 
-                feedback.debug(targetObject)
-                //if ()
-                return targetObject ? targetObject.object.id : null
-
+                return targetObject ? targetObject.config.id : null
             }))
             
             _.set(object, replaceProp.path, newPropertyValue)
         } else {
             const currentPropertyValue = _.get(object, replaceProp.path)
-            feedback.debug(`(non-array) I would now lookup the ${replaceProp.comparisonProp} '${currentPropertyValue}' of type ${replaceProp.object} for the target instance`)
-            _.set(object, replaceProp.path, "test")
+            logger.debug(`(non-array) I would now lookup the ${replaceProp.comparisonProp} '${currentPropertyValue}' of type ${replaceProp.object} for the target instance`)
             // TODO implement lookup and switch
+            _.set(object, replaceProp.path, "TODO implement lookup and switch")
         }
     }   
     
@@ -190,21 +215,27 @@ const getInstanceObjects = async (objectDef, source, parentObjectId) => {
                 "Authorization": `SSWS ${config.instances[source].token}`
             }
         })
-        return response.data
+        if (_.isArray(response.data)) {
+            return response.data
+        } else {
+            return [response.data]
+        }
+        
     } catch(error) {
-        feedback.error(`\x1b[33m Error querying ${config.instances[source].baseUrl}/${objectDef.endpoint}?${objectDef.queryString} \x1b[0m`);
-        feedback.error(error)
+        logger.error(`\x1b[33m Error querying ${config.instances[source].baseUrl}/${objectDef.endpoint}?${objectDef.queryString} \x1b[0m`);
+        logger.error(error)
     }
     
 }
 
-const updateInstanceObject = async (object, objectDef, target, existingTargetObjectId) => {
-    feedback.log(`Updating ${(object.profile) ? object.profile.name : object.name }`)
+const updateInstanceObject = async (objectConfig, objectDef, target, existingTargetObjectId) => {
+
+    logger.info(`Updating ${(objectConfig.profile) ? objectConfig.profile.name : objectConfig.name }`)
     try {
-        //feedback.log(JSON.stringify(object, null, 4))
+        //logger.info(JSON.stringify(object, null, 4))
         if (config.forreal) { 
             const response = await oktaApi.put(`${config.instances[target].baseUrl}/${objectDef.endpoint}/${existingTargetObjectId}`, {
-                ...object                            
+                ...objectConfig
             },{
                 headers: {
                     "Authorization": `SSWS ${config.instances[target].token}`
@@ -213,25 +244,27 @@ const updateInstanceObject = async (object, objectDef, target, existingTargetObj
             return response.data
         }
     } catch(error) {
+        logger.error(JSON.stringify(objectConfig, null, 4))
         if (error.response) {
-            feedback.error(`\x1b[31m -------- ERROR ------------- \x1b[0m`)
-            feedback.error(error.response.data)
-            feedback.error(`\x1b[31m --------  END  ------------- \x1b[0m`)
+            logger.error("Okta response follows")
+            logger.error(JSON.stringify(error.response.data, null, 4))
         } else {
-            feedback.error(error)
+            logger.error(error)
         }
+        return error
     }
 
 }
 
 
-const createInstanceObject = async (object, objectDef, target) => {
-    feedback.log(`Creating ${(object.profile) ? object.profile.name : object.name }`)
+const createInstanceObject = async (objectConfig, objectDef, target, parentId) => {
+
+    logger.info(`Creating ${objectDef.name} object '${(objectConfig.profile) ? objectConfig.profile.name : objectConfig.name }'`)
     try {
-        //feedback.log(JSON.stringify(object, null, 4))
+        
         if (config.forreal) {
-            const response = await oktaApi.post(`${config.instances[target].baseUrl}/${objectDef.endpoint}`, {
-                ...object                            
+            const response = await oktaApi.post(`${config.instances[target].baseUrl}/${objectDef.endpoint.replace("{id}",parentId)}`, {
+                ...objectConfig                            
             },{
                 headers: {
                     "Authorization": `SSWS ${config.instances[target].token}`
@@ -241,13 +274,14 @@ const createInstanceObject = async (object, objectDef, target) => {
         }
         
     } catch(error) {
+        logger.error(JSON.stringify(objectConfig, null, 4))
         if (error.response) {
-            feedback.error(`\x1b[31m -------- ERROR ------------- \x1b[0m`)
-            feedback.error(error.response.data)
-            feedback.error(`\x1b[31m --------  END  ------------- \x1b[0m`)
+            logger.error("Okta response follows")
+            logger.error(JSON.stringify(error.response.data, null, 4))
         } else {
-            feedback.error(error)
+            logger.error(error)
         }
+        return error
     }
 
 }
@@ -259,16 +293,16 @@ const main = async () => {
     const target = (process.argv[4] !== undefined)?process.argv[4]:undefined
     
     if (!isCommandLineValid(action, target, source)) {
-        feedback.log("There is an error in your command. Check the commmand line")
+        logger.info("There is an error in your command. Check the commmand line")
     } else {
         if (action == "get") {
-            feedback.log(`We are Getting configuration from instance ${source}. `)
-            feedback.log("Press a key to continue")
+            logger.info(`We are Getting configuration from instance ${source}. `)
+            logger.info("Press a key to continue")
             //await keypress()
 
         } else {
-            feedback.log(`We are Setting configuration to instance ${target}. The source is the latest snapshot from ${source}`)
-            feedback.log("Press a key to continue")
+            logger.info(`We are Setting configuration to instance ${target}. The source is the latest snapshot from ${source}`)
+            logger.info("Press a key to continue")
             //await keypress()
         }
     }
@@ -287,7 +321,7 @@ const main = async () => {
         */
         for (const def of parentObjectDefinitions) {
             if (def.extract === true) {
-                feedback.log(`Getting objects of type ${def.name}`)
+                logger.info(`Getting objects of type ${def.name}`)
 
                 await get(db, session, source, def)    
             }
@@ -304,11 +338,9 @@ const main = async () => {
         
         for (const def of parentObjectDefinitions) {
             if (def.upsert === true) {
-                feedback.log(`Upserting objects of type ${def.name}`)
-
                 const objects = await getSourceObjects(db, source, def.name)
 
-                feedback.log(`Setting objects of type ${def.name}`)
+                logger.info(`Calling SET for ${objects.length} objects of type ${def.name}`)
                 await set(db, session, source, target, def, objects)
             }            
         }

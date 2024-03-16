@@ -2,8 +2,8 @@ import secrets from "./secrets.js"
 
 const config = {
     forreal: true,
-    debug: true,
-    apiRequestDelay: 1000,
+    debug: false,
+    apiRequestDelay: 1500,
     db: {
         host: "cluster0.gmo8udc.mongodb.net",
         username: "okta-config-manager",
@@ -22,6 +22,10 @@ const config = {
         dev2: {
             baseUrl: "https://dev-05729419.okta.com/api/v1",
             token: secrets.okta.dev2Token
+        },
+        dev3: {
+            baseUrl: "https://dev-83532581.okta.com/api/v1",
+            token: secrets.okta.dev3Token
         },
         mazarsprod: {
             baseUrl: "https://mazarsnl.okta-emea.com/api/v1",

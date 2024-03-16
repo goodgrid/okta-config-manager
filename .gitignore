@@ -1,0 +1,7 @@
+secrets.js
+node_modules
+snapshots
+.DS_Store
+*.mongodb.js
+package-lock.json
+*.log
