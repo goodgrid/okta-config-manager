@@ -1,5 +1,8 @@
 
-const objectTypes = [
+const objectTypes = [ 
+    /*
+        TODO: Find a way to prepare the user schema. Currenty the http method for both updates and creations
+        are put, so this object is not compatible with the implementation.
     { 
         name: "userSchema",
         parents: [],
@@ -12,12 +15,12 @@ const objectTypes = [
         queryString: ``,
         comparisonProp: "name",
     },
-/*
+    */
     { 
         name: "oktaGroup",
         parents: [],
-        extract: true,
-        upsert: true,
+        extract: false,
+        upsert: false,
         exclude: ["Everyone", "Okta Administrators"],
         replaceProps: [],
         deletableProps: [],
@@ -28,7 +31,8 @@ const objectTypes = [
     {
         name: "zone",
         parents: [],
-        extract: true,
+        extract: false,
+        upsert: false,
         upsert: true,
         exclude: [],
         replaceProps: [],
@@ -37,12 +41,11 @@ const objectTypes = [
         queryString: ``,
         comparisonProp: "name",
     },
-
     {
         name: "groupRule",
         parents: [],
-        extract: true,
-        upsert: true,
+        extract: false,
+        upsert: false,
         exclude: [],
         deletableProps: [],
         endpoint: "groups/rules",
@@ -51,29 +54,38 @@ const objectTypes = [
         exclude: [],
         deletableProps: [
             "conditions.people.users.exclude",
-            "conditions.people.groups.exclude",
         ],
         replaceProps: [
             {
                 path: "actions.assignUserToGroups.groupIds",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
+            },
+            {
+                path: "conditions.people.groups.exclude",
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
             }
+            
         ],
-        postCreateActions: [ //TODO: Implement this
+        /*
+            TODO: Implement this if we want for example group rules to enable
+            group rules after having created them.
+        */
+        postCreateActions: [ 
+
             {
                 method: "POST",
                 endpoint: "groups/rules/{id}/lifecycle/activate",
                 body: {}
             }
         ]
-
     },
     {
         name: "globalSignOnPolicy",
         parents: [],
-        extract: true,
-        upsert: true,
+        extract: false,
+        upsert: false,
         endpoint: "policies",
         queryString: "type=OKTA_SIGN_ON", 
         comparisonProp: "name",
@@ -82,7 +94,6 @@ const objectTypes = [
         replaceProps: [
             {
                 path: "conditions.people.groups.include",
-                //type: "array",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
             }
@@ -103,19 +114,16 @@ const objectTypes = [
         replaceProps: [
             {
                 path: "conditions.people.groups.include",
-                //type: "array",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
             }
         ]
-
-
     },
     {    
         name: "passwordPolicy",
         parents: [],
-        extract: true,
-        upsert: true,
+        extract: false,
+        upsert: false,
         endpoint: "policies",
         queryString: "type=PASSWORD",
         comparisonProp: "name",
@@ -124,34 +132,55 @@ const objectTypes = [
         replaceProps: [
             {
                 path: "conditions.people.groups.include",
-                //type: "array",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
             }
         ]
-
+    },
+    {
+        name: "enrollmentPolicy",
+        parents: [],
+        extract: true,
+        upsert: true,
+        endpoint: "policies",
+        queryString: "type=MFA_ENROLL",
+        comparisonProp: "name",
+        exclude: [],
+        deletableProps: [],
+        replaceProps: [
+            {
+                path: "conditions.people.groups.include",
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
+            }
+        ]
     },
     {
         name: "policyRule",
-        parents: ["passwordPolicy", "globalSignOnPolicy", "accessPolicy"],
+        parents: ["passwordPolicy", "globalSignOnPolicy", "accessPolicy", "enrollmentPolicy"],
         extract: true,
         upsert: true,
         endpoint: "policies/{id}/rules",
         queryString: "",
         comparisonProp: "name",
         exclude: [],
-        deletableProps: [],
-        replaceProps: [            {
-            path: "conditions.network.include",
-            //type: "string",
-            object: "zone",
-            comparisonProp: "name"
-        }
+        deletableProps: [
+            "conditions.app"
+        ],
+        replaceProps: [
+            {
+                path: "conditions.network.include",
+                object: "zone",
+                comparisonProp: "name"
+            },
+            {
+                path: "conditions.network.exclude",
+                object: "zone",
+                comparisonProp: "name"
+            }
+        ]
+    },
+    
 ]
-
-    }
-*/
-]
-
 
 export default objectTypes

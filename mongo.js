@@ -1,5 +1,4 @@
 import { MongoClient, ServerApiVersion } from "mongodb";
-import { feedback } from "./utils.js";
 import config from "./config.js";
 
 const uri = `mongodb+srv://${config.db.username}:${config.db.password}@${config.db.host}/?retryWrites=true&w=majority&ssl=true`

@@ -1,7 +1,6 @@
 import secrets from "./secrets.js"
 
 const config = {
-    forreal: true,
     debug: false,
     apiRequestDelay: 1500,
     db: {

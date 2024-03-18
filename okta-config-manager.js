@@ -3,7 +3,7 @@ import db from './mongo.js';
 import logger from './logger.js';
 import { oktaApi } from "./okta.js"
 import objectTypes from './types.js';
-import { isCommandLineValid, keypress, getSourceObjects, feedback } from './utils.js';
+import { isCommandLineValid, keypress, summarizeOktaError } from './utils.js';
 import config from "./config.js"
 
 export const get = async (db, session, source, objectDef, parentId) => {
@@ -11,8 +11,6 @@ export const get = async (db, session, source, objectDef, parentId) => {
     const childObjectDefinitions = objectTypes.filter(definition => definition.parents.indexOf(objectDef.name) > -1)
 
     const instanceObjects = await getInstanceObjects(objectDef, source, parentId)
-
-    console.log(instanceObjects)
 
     const resultObjects = (await Promise.all(instanceObjects.map(async resultObject => {
         logger.debug(`${session} - Saving ${objectDef.name} ${resultObject.profile ? resultObject.profile.name : resultObject.name} to database`)
@@ -27,7 +25,7 @@ export const get = async (db, session, source, objectDef, parentId) => {
             type: objectDef.name,
             instance: source,
             parentId: parentId,
-            config: resultObject,
+            body: resultObject,
         }
         await db.objects.insertOne(result)
         return  result       
@@ -63,13 +61,13 @@ export const set = async (db, session, source, target, objectDef, objects, paren
             Skip config objects whose name are configured as excluded in the object 
             definition
         */
-        if (objectDef.exclude.indexOf(object.config.name) == -1) {
+        if (objectDef.exclude.indexOf(object.body.name) == -1) {
             /*
                 The source object is turned into a target object by switching references to
                 groups, zones, etc to the id's of the target instance.
 
             */
-            await prepareObject(db, object.config, objectDef, source, target)
+            await prepareObject(db, object.body, objectDef, source, target)
 
             /*
                 Check if the object that is about to be upserted already exists. This decides
@@ -87,15 +85,15 @@ export const set = async (db, session, source, target, objectDef, objects, paren
                 neccessary to be able to swith references (id's)
             */
             const existingTargetObject = targetObjects.find(targetObject => {
-                return _.get(targetObject.config, objectDef.comparisonProp) == _.get(object.config, objectDef.comparisonProp)
+                return _.get(targetObject.body, objectDef.comparisonProp) == _.get(object.body, objectDef.comparisonProp)
             })
 
             let touchedTargetObject
             if (existingTargetObject) {
-                touchedTargetObject = await updateInstanceObject(object.config, objectDef, target, existingTargetObject.config.id)
+                touchedTargetObject = await updateInstanceObject(object.body, objectDef, target, existingTargetObject.body.id, parentId)
 
             } else {
-                touchedTargetObject = await createInstanceObject(object.config, objectDef, target, parentId)
+                touchedTargetObject = await createInstanceObject(object.body, objectDef, target, parentId)
 
                 if (!(touchedTargetObject instanceof Error)) {
                     logger.info("New object succesfully created")
@@ -110,14 +108,14 @@ export const set = async (db, session, source, target, objectDef, objects, paren
                     session: session,
                     type: objectDef.name,
                     instance: target,
-                    config: touchedTargetObject
+                    body: touchedTargetObject
                 })
 
                 // For every object of the current type, set child objects, if any
                 for (const childObjectDef of childObjectDefinitions) {
-                    logger.info(`Now starting to process child objects of type ${childObjectDef.name} for parent ${object.config.id}`)
+                    logger.info(`Now starting to process child objects of type ${childObjectDef.name} for parent ${object.body.id}`)
 
-                    const childSourceObjects = await getSourceObjects(db, source, childObjectDef.name, object.config.id)
+                    const childSourceObjects = await getSourceObjects(db, source, childObjectDef.name, object.body.id)
 
                     await set(db, session, source, target, childObjectDef, childSourceObjects, touchedTargetObject.id)
                 }
@@ -167,40 +165,43 @@ const prepareObject = async (db, object, objectDef, source, target) => {
         // Get the current value for the property 
         const currentPropertyValue = _.get(object, replaceProp.path)
 
-        // Check if it's an array of values or a single value
-        if (_.isArray(currentPropertyValue)) {
-            // It's an array of values and we're looping over each one of them
-            const newPropertyValue = await Promise.all(currentPropertyValue.map(async currentPropertyValueElement => {
+        // Only execute logic if the property exists
+        if (currentPropertyValue) {
+            // Check if it's an array of values or a single value
+            if (_.isArray(currentPropertyValue)) {
+                // It's an array of values and we're looping over each one of them
+                const newPropertyValue = await Promise.all(currentPropertyValue.map(async currentPropertyValueElement => {
+                    
+                    logger.debug(`(array) I would now lookup object with the id '${currentPropertyValueElement}' of type ${replaceProp.object} for the target instance`)
+
+                    const sourceObject = await db.objects.findOne({
+                        "type": replaceProp.object,
+                        "instance": source,
+                        "config.id": currentPropertyValueElement
+                    }, {
+                        ignoreExclusion: true
+                    })
+
+                    //TODO I have to make sure the below query finds a recent object, since the database
+                    // could contain really old objects.
+                    const targetObject = await db.objects.findOne({
+                        "type": replaceProp.object,
+                        "instance": target,
+                        [`config.${replaceProp.comparisonProp}`]: _.get(sourceObject, `config.${replaceProp.comparisonProp}`) //sourceobject.body.profile.name]
+                    },{
+                        ignoreExclusion: true
+                    })
+
+                    return targetObject ? targetObject.body.id : null
+                }))
                 
-                logger.debug(`(array) I would now lookup object with the id '${currentPropertyValueElement}' of type ${replaceProp.object} for the target instance`)
-
-                const sourceObject = await db.objects.findOne({
-                    "type": replaceProp.object,
-                    "instance": source,
-                    "config.id": currentPropertyValueElement
-                }, {
-                    ignoreExclusion: true
-                })
-
-                //TODO I have to make sure the below query finds a recent object, since the database
-                // could contain really old objects.
-                const targetObject = await db.objects.findOne({
-                    "type": replaceProp.object,
-                    "instance": target,
-                    [`config.${replaceProp.comparisonProp}`]: _.get(sourceObject, `config.${replaceProp.comparisonProp}`) //sourceObject.config.profile.name]
-                },{
-                    ignoreExclusion: true
-                })
-
-                return targetObject ? targetObject.config.id : null
-            }))
-            
-            _.set(object, replaceProp.path, newPropertyValue)
-        } else {
-            const currentPropertyValue = _.get(object, replaceProp.path)
-            logger.debug(`(non-array) I would now lookup the ${replaceProp.comparisonProp} '${currentPropertyValue}' of type ${replaceProp.object} for the target instance`)
-            // TODO implement lookup and switch
-            _.set(object, replaceProp.path, "TODO implement lookup and switch")
+                _.set(object, replaceProp.path, newPropertyValue)
+            } else {
+                const currentPropertyValue = _.get(object, replaceProp.path)
+                logger.debug(`(non-array) I would now lookup the ${replaceProp.comparisonProp} '${currentPropertyValue}' of type ${replaceProp.object} for the target instance`)
+                // TODO implement lookup and switch
+                _.set(object, replaceProp.path, "TODO implement lookup and switch")
+            }
         }
     }   
     
@@ -215,77 +216,82 @@ const getInstanceObjects = async (objectDef, source, parentObjectId) => {
                 "Authorization": `SSWS ${config.instances[source].token}`
             }
         })
-        if (_.isArray(response.data)) {
-            return response.data
-        } else {
-            return [response.data]
-        }
+        return response.data
         
     } catch(error) {
-        logger.error(`\x1b[33m Error querying ${config.instances[source].baseUrl}/${objectDef.endpoint}?${objectDef.queryString} \x1b[0m`);
-        logger.error(error)
+        if (error.response) {
+            logger.error(summarizeOktaError(error.response))
+        } else {
+            logger.error(error)
+        }
     }
     
 }
 
-const updateInstanceObject = async (objectConfig, objectDef, target, existingTargetObjectId) => {
+const updateInstanceObject = async (body, objectDef, target, existingTargetObjectId, parentId) => {
 
-    logger.info(`Updating ${(objectConfig.profile) ? objectConfig.profile.name : objectConfig.name }`)
+    logger.info(`Updating ${(body.profile) ? body.profile.name : body.name }`)
     try {
-        //logger.info(JSON.stringify(object, null, 4))
-        if (config.forreal) { 
-            const response = await oktaApi.put(`${config.instances[target].baseUrl}/${objectDef.endpoint}/${existingTargetObjectId}`, {
-                ...objectConfig
-            },{
-                headers: {
-                    "Authorization": `SSWS ${config.instances[target].token}`
-                }
-            }) 
-            return response.data
-        }
+        const response = await oktaApi.put(`${config.instances[target].baseUrl}/${objectDef.endpoint.replace("{id}",parentId)}/${existingTargetObjectId}`, {
+            ...body
+        },{
+            headers: {
+                "Authorization": `SSWS ${config.instances[target].token}`
+            }
+        }) 
+        return response.data
     } catch(error) {
-        logger.error(JSON.stringify(objectConfig, null, 4))
         if (error.response) {
-            logger.error("Okta response follows")
-            logger.error(JSON.stringify(error.response.data, null, 4))
+            logger.error(summarizeOktaError(error.response))
         } else {
             logger.error(error)
         }
+        logger.error("Failing object follows")
+        logger.error(JSON.stringify(body, null, 4))
         return error
     }
 
 }
 
 
-const createInstanceObject = async (objectConfig, objectDef, target, parentId) => {
+const createInstanceObject = async (body, objectDef, target, parentId) => {
 
-    logger.info(`Creating ${objectDef.name} object '${(objectConfig.profile) ? objectConfig.profile.name : objectConfig.name }'`)
+    logger.info(`Creating ${objectDef.name} object '${(body.profile) ? body.profile.name : body.name }'`)
     try {
-        
-        if (config.forreal) {
-            const response = await oktaApi.post(`${config.instances[target].baseUrl}/${objectDef.endpoint.replace("{id}",parentId)}`, {
-                ...objectConfig                            
-            },{
-                headers: {
-                    "Authorization": `SSWS ${config.instances[target].token}`
-                }
-            }) 
-            return response.data
-        }
-        
+        const response = await oktaApi.post(`${config.instances[target].baseUrl}/${objectDef.endpoint.replace("{id}",parentId)}`, {
+            ...body                            
+        },{
+            headers: {
+                "Authorization": `SSWS ${config.instances[target].token}`
+            }
+        }) 
+        return response.data
     } catch(error) {
-        logger.error(JSON.stringify(objectConfig, null, 4))
         if (error.response) {
-            logger.error("Okta response follows")
-            logger.error(JSON.stringify(error.response.data, null, 4))
+            logger.error(summarizeOktaError(error.response))
         } else {
             logger.error(error)
         }
+        logger.error("Failing object follows")
+        logger.error(JSON.stringify(body, null, 4))
         return error
+
     }
 
 }
 
+export const getSourceObjects = async (db, instance, type, parentId) => {
+    logger.debug(`Getting '${type}' objects for parent ${parentId?parentId:"(none)"} from source ${instance}`)
+    const sessions = await db.objects.distinct("session", { "type": type, "instance": instance}, {ignoreExclusion: true})
+    const mostRecentSession = sessions.sort().reverse()[0]
+
+    return await db.objects.find({
+        session: mostRecentSession,
+        instance: instance,
+        parentId: parentId,
+        type: type
+    })
+}
 
 const main = async () => {
     const action = (process.argv[2] !== undefined)?process.argv[2]:"get"
