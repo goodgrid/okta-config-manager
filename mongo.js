@@ -8,11 +8,7 @@ let myDB
 
 /*
     All mehthods to write and retrieve json documents to/from Mongo.
-
-    TODO: These documents can contain sensitive information. We should encrypt before
-    writing to a public cloud service.
 */
-
 const db = {
     open: () => {
         client = new MongoClient(uri, {

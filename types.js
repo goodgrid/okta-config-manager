@@ -19,8 +19,8 @@ const objectTypes = [
     { 
         name: "oktaGroup",
         parents: [],
-        extract: false,
-        upsert: false,
+        extract: true,
+        upsert: true,
         exclude: ["Everyone", "Okta Administrators"],
         replaceProps: [],
         deletableProps: [],
@@ -31,11 +31,11 @@ const objectTypes = [
     {
         name: "zone",
         parents: [],
-        extract: false,
-        upsert: false,
+        extract: true,
         upsert: true,
         exclude: [],
-        replaceProps: [],
+        replaceProps: [
+        ],
         deletableProps: [],
         endpoint: "zones",
         queryString: ``,
@@ -44,8 +44,8 @@ const objectTypes = [
     {
         name: "groupRule",
         parents: [],
-        extract: false,
-        upsert: false,
+        extract: true,
+        upsert: true,
         exclude: [],
         deletableProps: [],
         endpoint: "groups/rules",
@@ -57,15 +57,24 @@ const objectTypes = [
         ],
         replaceProps: [
             {
+                function: "arrayIdSwitch",
                 path: "actions.assignUserToGroups.groupIds",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
             },
             {
+                function: "arrayIdSwitch",
                 path: "conditions.people.groups.exclude",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
+            },            
+            {
+                function: "groupExpressionChange",
+                path: "conditions.expression.value",
+                object: "oktaGroup",
+                comparisonProp: "profile.name"
             }
+            
             
         ],
         /*
@@ -93,6 +102,7 @@ const objectTypes = [
         deletableProps: [],
         replaceProps: [
             {
+                function: "arrayIdSwitch",
                 path: "conditions.people.groups.include",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
@@ -113,6 +123,7 @@ const objectTypes = [
         deletableProps: [],
         replaceProps: [
             {
+                function: "arrayIdSwitch",
                 path: "conditions.people.groups.include",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
@@ -131,6 +142,7 @@ const objectTypes = [
         deletableProps: [],
         replaceProps: [
             {
+                function: "arrayIdSwitch",
                 path: "conditions.people.groups.include",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
@@ -149,6 +161,7 @@ const objectTypes = [
         deletableProps: [],
         replaceProps: [
             {
+                function: "arrayIdSwitch",
                 path: "conditions.people.groups.include",
                 object: "oktaGroup",
                 comparisonProp: "profile.name"
@@ -169,11 +182,13 @@ const objectTypes = [
         ],
         replaceProps: [
             {
+                function: "arrayIdSwitch",
                 path: "conditions.network.include",
                 object: "zone",
                 comparisonProp: "name"
             },
             {
+                function: "arrayIdSwitch",
                 path: "conditions.network.exclude",
                 object: "zone",
                 comparisonProp: "name"

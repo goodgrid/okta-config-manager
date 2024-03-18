@@ -34,10 +34,16 @@ The token properties which need to be included in the secrets.js are API tokens.
 What the tool will do is also dependent on the 'object type definitions' in types.js. In this file, javascript objects are defined for the various Okta objects and how to handle them. Optionally, objects can be skipped for getting and/or setting here. Individual objects can be excluded from processing my adding the 'exluded: true' flag to the objects in the database.
 
 
-## Required Manual Tasks before syncing
+## Required manual tasks before syncing
  
+- Emppty network zones are not supported by Okta, while the 'LegacyIPZone' is empty be default. This zone needs to be configured with 0.0.0.0 before starting.
 - Add user properties in the user schema. The user schema is not synched
 - Enable and configure authenticators/factors. These are not synced.
+
+## Optional manual tasks after syncing
+
+- General configuration settings are not synced automatically
+- General security configuration settings are not synced automatically
 
 
 ## Usage
@@ -56,9 +62,15 @@ This command would get the most recent set of configuration (based on the sessio
 
 ## Known issues
 
+- While replacing values it can happen that the wrong object is returned if the database contains a large history of the target instance. This is a TODO in the helperReplaceGroupId function.
+- Replacing properties of another type than array is not implemented yet. There are currently replacd by the value 'test' 
 - Built-in groups are attempted to be updated. This results in an error while processing continue. Errors while updating groups "Everyone" and "System administrators" can be ignored.
 - Group rules based on the 'isMemberOfAnyGroup' method fails, becasue the reference to the groupId in the expression is not replaced. These rules are best to be rewritten to refer to a group based on its name, instead of pointing to the group in the UI
+- Group rules are created inactive and are currently not activated by the sync. They need to be activated by hand, while keeping in mind that some rules are inactive on the source instance as well.
 
+
+        18-3-2024 11:37:12 [[31merror[39m] : API-validatie mislukt: conditions.network,conditions.network: U kunt geen netwerkzones opnemen of uitsluiten wanneer u het verbindingstype ANYWHERE gebruikt. 
+        18-3-2024 11:43:53 [[31merror[39m] : API-validatie mislukt: settings.recovery.factors.recovery_question.status,settings.recovery.factors.recovery_question.status: The recovery.factors.recovery_question.status property cannot be set to INACTIVE. 
 
 ## Product Backlog
 
@@ -72,5 +84,4 @@ The following features are not implemented yet
 - Support for other Okt config, such as
    - General instance settings
    - General security settings
- - Encryption of sensitive properties
- - Change Okta API tokens for oAuth integrations
+ - Change the use of Okta API tokens to oAuth integrations
