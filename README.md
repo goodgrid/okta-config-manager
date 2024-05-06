@@ -4,8 +4,7 @@ The Okta Config Manager is a tool to turn Okta configuration into managable obje
 
 ## Configuration
 
-Before using this tool, it needs to be setup. The configuration is contained in config.js which refers to secrets in secrets.js. These two are split to be able to 
-manage config.js in version management and leave secrets.js out of that.
+Before using this tool, it needs to be set up. The configuration is contained in config.js which refers to secrets in secrets.js. These two are split to be able to  manage config.js in version management and leave secrets.js out of version management.
 
 ```
 const config = {
@@ -36,9 +35,9 @@ What the tool will do is also dependent on the 'object type definitions' in type
 
 ## Required manual tasks before syncing
  
-- Emppty network zones are not supported by Okta, while the 'LegacyIPZone' is empty be default. This zone needs to be configured with 0.0.0.0 before starting.
+- Emppty network zones are not supported by Okta, while the 'LegacyIPZone' is empty be default. This zone needs to be configured with 0.0.0.0 in the source instance before starting.
 - Add user properties in the user schema. The user schema is not synched
-- Enable and configure authenticators/factors. These are not synced.
+- Enable and configure authenticators/factors. These are not synced. 
 
 ## Optional manual tasks after syncing
 
@@ -69,19 +68,20 @@ This command would get the most recent set of configuration (based on the sessio
 - Group rules are created inactive and are currently not activated by the sync. They need to be activated by hand, while keeping in mind that some rules are inactive on the source instance as well.
 
 
-        18-3-2024 11:37:12 [[31merror[39m] : API-validatie mislukt: conditions.network,conditions.network: U kunt geen netwerkzones opnemen of uitsluiten wanneer u het verbindingstype ANYWHERE gebruikt. 
-        18-3-2024 11:43:53 [[31merror[39m] : API-validatie mislukt: settings.recovery.factors.recovery_question.status,settings.recovery.factors.recovery_question.status: The recovery.factors.recovery_question.status property cannot be set to INACTIVE. 
-
 ## Product Backlog
 
 The following features are not implemented yet
 
+- Implementation of log leveling
 - Support for user schema
+- Enabling group rules based on state at source instance
 - Support for currently missing object type:
   - Identity providers
   - Apps
   - Brands
-- Support for other Okt config, such as
+- Support for other Okta config, such as
    - General instance settings
    - General security settings
  - Change the use of Okta API tokens to oAuth integrations
+ - Improve error handling
+   - Gracfully handle or retry in case of connection resets with a resource

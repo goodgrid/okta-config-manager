@@ -93,8 +93,8 @@ const objectTypes = [
     {
         name: "globalSignOnPolicy",
         parents: [],
-        extract: false,
-        upsert: false,
+        extract: true,
+        upsert: true,
         endpoint: "policies",
         queryString: "type=OKTA_SIGN_ON", 
         comparisonProp: "name",
@@ -133,8 +133,8 @@ const objectTypes = [
     {    
         name: "passwordPolicy",
         parents: [],
-        extract: false,
-        upsert: false,
+        extract: true,
+        upsert: true,
         endpoint: "policies",
         queryString: "type=PASSWORD",
         comparisonProp: "name",

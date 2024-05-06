@@ -26,7 +26,7 @@ export const validateCommandline = (action, source, target) => {
     if ( Object.keys(config.instances).indexOf(target) > -1 ) {
         targetValid = true
     } else {
-        errors.push("The third argument should be the target Okta instance which is being synced with configuration from the source")
+        errors.push(`The third argument (now set to '${target}') should be the target Okta instance which is being synced with configuration from the source`)
     }
     
     if (actionValid && sourceValid && targetValid) {

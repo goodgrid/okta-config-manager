@@ -30,6 +30,14 @@ const config = {
             baseUrl: "https://dev-87185917.okta.com/api/v1",
             token: secrets.okta.dev4Token
         },
+        dev5: {
+            baseUrl: "https://dev-84374825.okta.com/api/v1",
+            token: secrets.okta.dev5Token
+        },
+        dev6: {
+            baseUrl: "https://dev-15886763.okta.com/api/v1",
+            token: secrets.okta.dev6Token
+        },
         mazarsprod: {
             baseUrl: "https://mazarsnl.okta-emea.com/api/v1",
             token: secrets.okta.mazarsprdToken
